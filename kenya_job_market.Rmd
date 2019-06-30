@@ -1,0 +1,281 @@
+---
+title: "Kenya's Job Market"
+author: "Florence Muriuki"
+date: "6/30/2019"
+output: html_document
+---
+---
+title: "Analysis"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+library(readr)
+library(ggplot2)
+library(stringr)
+library(stringi)
+library(Hmisc)
+library(lubridate)
+library(tm)
+library(wordcloud)
+library(SnowballC)
+library(tidytext)
+library(gridExtra)
+library(treemap)
+```
+
+```{r, include = F}
+jobs = read_csv("jobs_1.csv")
+```
+
+
+
+```{r, include = F}
+posters_table = data.frame(sort(table(jobs$poster), decreasing = T))
+colnames(posters_table) = c("poster", "count")
+posters_table$poster = factor(posters_table$poster, levels = rev(levels(posters_table$poster)))
+
+```
+
+
+```{r, include = F}
+posters_table$poster = recode(posters_table$poster, 
+                              "Summit Recruitment and Search" = "Summit Recruitment",
+                              "Public Service Commission Kenya Psck"  = "Public  Service Commission")
+```
+
+```{r, include = F}
+plot_col_graph = function(data_df){
+  data_df[,1] = factor(data_df[,1], levels = levels(data_df[,1]))
+  ggplot(data_df, aes(x = data_df[,1], y = data_df[,2])) + geom_col(fill = "blue") + theme_classic() +
+  theme(axis.line = element_blank(), axis.ticks = element_blank(), axis.title = element_blank(), axis.text.x = element_text(angle = 90)) + coord_flip()
+}
+```
+
+
+
+```{r, include = F}
+recruitment_agencies = c("Corporate Staffing", "Alternate Doors", "Frank Management Consult Ltd", "Duma Works", "Hrbp Solutions", "R4Kenya", "Janta Kenya", "Sheer Logic", "Nft Consult", "Summit Recruitment", "Virtual Hr",  "Flexipersonnel", "Wisen Hr Services", "Brites Management", "Stratostaff East Africa", "Emerging Search Consultants", "Lee Myles Consulting Limited",  "African Management Services Company", "Crystal Recruitment","Fanisi Hr Solutions", "Tume Middle Africa Consulting Limited", "Manpower Services", "lovers Management Training Consultants Ltd", "Kentrain Limited"                              )
+```
+
+```{r include = F}
+recruiters = posters_table[posters_table$poster %in% recruitment_agencies,]
+g1 = plot_col_graph(recruiters[1:10,]) + ggtitle("Recruitment Firms") + ylim(c(0,850))
+```
+
+
+```{r include = F}
+other_firms = posters_table[!posters_table$poster %in% recruitment_agencies,]
+g2 = plot_col_graph(other_firms[1:10,]) + ggtitle("Non-recruitment Firms") + ylim(c(0,850))
+```
+There were 37034 jobs posted between 2016-09-07 and 2019-06-14 on [jobmag Kenya](https://www.myjobmag.co.ke/). According to the chart below, 2019 has witnessed decrease in jobs posted.
+
+```{r, echo = F}
+jobs_sub = jobs %>%
+  filter(date_posted > "2016-09-30" & date_posted < "2019-06-01")
+job_count = jobs_sub %>%
+  count(year(jobs_sub$date_posted), month(jobs_sub$date_posted))
+colnames(job_count) = c("year", "month", "count")
+ggplot(job_count, aes(x = month, y = count, group = year, colour = factor(year))) + geom_line() + scale_x_continuous(breaks = seq(1,12,1), labels = seq(1,12,1)) +
+  theme_bw() +
+  theme(axis.line = element_blank(), axis.ticks = element_blank(), axis.title = element_blank(), legend.title = element_blank())
+```
+
+
+
+
+
+Unsurprisingly, most of the top posters were recruitment agencies. Here are the recruitment and non-recruitment firms with highest number of posts:
+
+```{r echo = F, fig.width = 12, fig.height=3}
+grid.arrange(g1, g2, ncol = 2)
+```
+
+```{r include = F}
+safaricom = jobs[grep("safaricom", jobs$poster, ignore.case = T),]
+safaricom_table = data.frame(sort(table(safaricom$field), decreasing = T))
+plot_col_graph(safaricom_table[1:10,])
+
+```
+
+```{r include = F}
+
+safaricom$field[safaricom$field %in% c("ICT / Computer +", "Engineering / Technical +", "Engineering / Technical +ICT / Computer +")] = "ICT / Computer/ Engineering"
+
+safaricom_grouped_field = safaricom %>%
+  group_by(field) %>%
+  summarise(field_count = n()) %>%
+  arrange(desc(field_count)) %>%
+  filter(row_number() <= 5)
+
+
+safaricom_grouped_title = safaricom %>%
+  count(field, title) %>%
+  filter(field %in% safaricom_grouped_field$field)
+
+safaricom_grouped = safaricom_grouped_field %>% left_join(safaricom_grouped_title, by = "field")
+safaricom_grouped = read_csv("safaricom_grouped_cleaned.csv")
+
+```
+
+In terms of number of jobs postef, Safaricom led the pack of non-recruitment organizations followed by Public Service Commission and Save the Children.A quick look at Safaricom posts shows that ICT/Engineering, Sales & Marketing, Administration, Finance/Accounting and Customer Care formed the bulk of its job posts.
+
+```{r, fig.width = 12, echo = F}
+treemap(safaricom_grouped, index = c("field", "title"), vSize = "field_count", type = "index")
+```
+
+
+
+```{r, include = F}
+plot_lollipop_graph = function(data_df){
+  data_df[,1] = factor(data_df[,1], levels = levels(data_df[,1]))
+  ggplot(data_df, aes(x = data_df[,1], y = data_df[,2])) + geom_point(col = "blue", size = 3) +
+    geom_segment(aes(x = data_df[,1], xend = data_df[,1], y = 0, yend = data_df[,2]), col = "blue") +
+    theme_classic() +
+  theme(axis.line = element_blank(), axis.ticks = element_blank(), axis.title = element_blank(), axis.text.x = element_text(angle = 90)) + coord_flip()
+}
+
+
+plot_dot_plot = function(data_df){
+  data_df[,1] = factor(data_df[,1], levels = levels(data_df[,1]))
+  ggplot(data_df, aes(x = data_df[,1], y = data_df[,2])) + geom_point(col = "blue", size = 3) +
+    geom_segment(aes(x = data_df[,1], xend = data_df[,1], y = min(data_df[,2]), yend = max(data_df[,2])), col = "blue", linetype = "dashed", size = 0.1) +
+    theme_classic() +
+  theme(axis.line = element_blank(), axis.ticks = element_blank(), axis.title = element_blank(), axis.text.x = element_text(angle = 90)) + coord_flip()
+}
+
+
+```
+When the job posts are classified according to the industry of the poster/employer, NGOs and the Government emerge as the top posters. Recruitment firms contribute to the Consulting Industry high rank.
+```{r, echo = F}
+employers = jobs[!jobs$poster %in% recruitment_agencies,]
+industry_table = data.frame(sort(table(employers$industry), decreasing = T))
+industry_table$Var1 = factor(industry_table$Var1, levels = rev(industry_table$Var1))
+plot_dot_plot(industry_table[1:10,]) + ggtitle("")
+
+```
+
+The NGOs that posted a significant number of jobs include:
+```{r echo = F, fig.height=3}
+ngos = jobs[jobs$industry == "NGO / Non-Profit Associations",]
+ngos_table = data.frame(sort(table(ngos$poster), decreasing = T))
+ngos_table$Var1 = factor(ngos_table$Var1, levels = rev(ngos_table$Var1))
+plot_col_graph(ngos_table[1:10,])
+```
+
+2718 jobs were posted by the Central Government and parastatals while 1610 jobs were posted by county governments.
+```{r include = F}
+government = jobs[jobs$industry == "Government",]
+government_table = data.frame(sort(table(government$poster), decreasing = T))
+government_table$Var1 = recode(government_table$Var1, 
+                               `Public Service Commission Kenya Psck` = "PSCK",
+                               `Kenya Revenue Authority Kra` = "KRA",
+                               `National Environment Management Authority Nema` = "NEMA",
+                               `Kenya Marine and Fisheries Research Institute Kmfri` = "KMFRI",
+                               `Kenya Pipeline Company Kpc Limited` = "Kenya Pipeline Company",
+                               `Capital Markets Authority Cma` = "CMA") 
+government_table$Var1 = factor(government_table$Var1, levels = rev(government_table$Var1))
+gov_plot = plot_lollipop_graph(government_table[1:10,])
+
+```
+
+```{r include = F}
+cgo = government_table[!grepl("County", government_table$Var1),]
+
+cgo_plot = plot_lollipop_graph(cgo[1:10,]) + ylim(c(0,220)) + ggtitle("Central Government")
+
+```
+
+
+```{r include = F}
+county = government_table[grepl("County", government_table$Var1),]
+county$Var1 = gsub("county", "", county$Var1, ignore.case = T)
+county$Var1 = gsub("government", "", county$Var1, ignore.case = T)
+county$Var1 = gsub("of", "", county$Var1, ignore.case = T)
+county = county %>%
+  arrange(desc(Freq))
+county$Var1 = trimws(county$Var1)
+county$Var1 = factor(county$Var1, levels = rev(unique(county$Var1)))
+county_plot = plot_lollipop_graph(county[1:10,]) + ylim(c(0,220)) + ggtitle("County Governments")
+
+```
+
+
+```{r echo = F, fig.width=12} 
+grid.arrange(cgo_plot, county_plot, ncol = 2) 
+```
+
+
+```{r, fig.width = 12, include = F}
+top_industries = jobs %>%
+  filter(industry %in% industry_table$Var1[1:10])
+
+top_industries_grouped = top_industries %>%
+  group_by(industry) %>%
+  summarise(industry_count = n())
+
+top_industries_fields = top_industries %>%
+  filter(!is.na(field)) %>%
+  group_by(industry, field) %>%
+  summarise(field_count = n())
+  
+
+top_industries_grouped = top_industries_grouped %>%
+  left_join(top_industries_fields, by = "industry") # clean this in open refine
+
+#treemap(top_industries_grouped, index = c("industry", "field"), vSize = "industry_count", type = "index")
+
+```
+
+The top 10 job fields are:
+
+```{r, echo = F, fig.height = 3}
+jobs$field = trimws(gsub("[^A-Za-z//]", "",jobs$field), "both")
+jobs$field = trimws(gsub("UA", "",jobs$field, ignore.case = F), "both")
+fields_table = data.frame(sort(table(jobs$field), decreasing = T))
+plot_col_graph(fields_table[1:10, ])
+```
+
+I was curious about data related jobs. I used the following keywords to filter job titles related data functions: data, machine learning, deep learning, artificial intelligence and statistic. Data analyst was the most common job title in this category. 
+
+```{r, include = F}
+data_titles = c("data", "machine learning", "deep learning", "artificial intelligence", "statistic")
+data_jobs = jobs %>%
+  filter(grepl(paste(data_titles, collapse = "|"), title, ignore.case = T))
+data_jobs$title= gsub("\\s+", " ", data_jobs$title)
+data_jobs$title = trimws(stri_trans_general(data_jobs$title, "title"), "both")
+```
+
+```{r, include = F}
+data_jobs$title = recode(data_jobs$title, 
+                         "Data Management Assistant" = "Data Mgmt Assistant",
+                         "Data Management Officer" = "Data Mgmt Officer",
+                         "Data & Database Assistant" = "Data Assistant",
+                         "Oracle Database Administrator" = "Database Adminstrator", "Senior Software Engineer - Data Visualization" = "Sr. Engineer - Visualization")
+```
+
+
+```{r, include = F}
+plot_dot_plot = function(data_df){
+  data_df[,1] = factor(data_df[,1], levels = levels(data_df[,1]))
+  ggplot(data_df, aes(x = 0.1, y = data_df[,3])) +
+    geom_point(aes(size = data_df[,2]),  col = "blue") +
+    geom_text(aes(label = paste(data_df[,1], data_df[,2], sep = " :")), hjust = 0
+              ) +
+    scale_size(range = c(4,20)) +
+    theme_classic() +
+  theme(axis.line = element_blank(), axis.ticks = element_blank(), axis.title = element_blank(), axis.text = element_blank(), legend.position = "none")
+}
+```
+
+```{r, echo = F}
+data_jobs_table = data.frame(sort(table(data_jobs$title), decreasing = T))
+data_jobs_table$rank = 1:nrow(data_jobs_table)
+plot_dot_plot(data_jobs_table[1:10,]) 
+
+```
+
+
